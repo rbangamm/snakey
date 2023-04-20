@@ -12,9 +12,20 @@
 
 use log::info;
 use serde_json::{json, Value};
+use std::ops::Add;
 
-use crate::{Battlesnake, Board, Game};
+use crate::{Battlesnake, Board, Game, Coord};
 
+
+impl Add for Coord {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self {
+            x: self.x + other.x,
+            y: self.y + other.y
+        }
+    }
+}
 
 #[derive(PartialEq)]
 pub enum Move {
@@ -37,6 +48,16 @@ impl Move {
     }
 }
 
+fn next_move(direction: Move) -> Coord {
+    match direction {
+        Move::UP => Coord { x: 0, y: 1 },
+        Move::DOWN => Coord { x: 0, y: -1 },
+        Move::LEFT => Coord { x: -1, y: 0 },
+        Move::RIGHT => Coord { x: 1, y: 0 },
+        Move::NONE => Coord { x: 0, y: 0 }
+    }
+}
+
 // info is called when you create your Battlesnake on play.battlesnake.com
 // and controls your Battlesnake's appearance
 // TIP: If you open your Battlesnake URL in a browser you should see this data
@@ -52,7 +73,6 @@ pub fn info() -> Value {
     });
 }
 
-// TODO: Add checks for body, out of bounds, and opponents
 
 // start is called when your Battlesnake begins a game
 pub fn start(_game: &Game, _turn: &u32, _board: &Board, _you: &Battlesnake) {
@@ -62,6 +82,24 @@ pub fn start(_game: &Game, _turn: &u32, _board: &Board, _you: &Battlesnake) {
 // end is called when your Battlesnake finishes a game
 pub fn end(_game: &Game, _turn: &u32, _board: &Board, _you: &Battlesnake) {
     info!("GAME OVER");
+}
+
+fn is_safe_move(test_direction: Move, you: &Battlesnake, board: &Board) -> bool {
+    let my_head = &you.body[0];
+    let next = next_move(test_direction);
+    let next_pos = my_head.add(next);
+    let is_oob = next_pos.x < 0 || next_pos.y < 0 || next_pos.x >= board.width as i32 || next_pos.y >= board.height as i32;
+    let is_body_collision = you.body.contains(&next_pos);
+    info!("number of snakes {}", board.snakes.len());
+    let is_opponent_collision = board.snakes
+        .iter()
+        .map(|snake| {
+            info!("snake {}", snake.name);
+            snake.body.contains(&next_pos) || snake.head == next_pos
+        })
+        .any(|v| v);
+    info!("is_oob {} is_body_collision {} is_opponent_collision {}", is_oob, is_body_collision, is_opponent_collision);
+    !is_oob && !is_body_collision && !is_opponent_collision
 }
 
 // move is called on every turn and returns your next move
@@ -104,23 +142,25 @@ pub fn get_move(_game: &Game, turn: &u32, _board: &Board, you: &Battlesnake) -> 
     let left_score : i32 = priorities
         .clone()
         .filter(|(x, _, _)| x < &my_head.x)
-        .map(|(_, _, score)| if movement_dir != Move::RIGHT {score} else {MIN_VAL})
+        .map(|(_, _, score)| if is_safe_move(Move::LEFT, you, _board) {score} else {MIN_VAL})
         .sum();
     let right_score : i32 = priorities
         .clone()
         .filter(|(x, _, _)| x > &my_head.x)
-        .map(|(_, _, score)| if movement_dir != Move::LEFT {score} else {MIN_VAL})
+        .map(|(_, _, score)| if is_safe_move(Move::RIGHT, you, _board)  {score} else {MIN_VAL})
         .sum();
     let up_score : i32 = priorities
         .clone()
         .filter(|(_, y, _)| y > &my_head.y)
-        .map(|(_, _, score)| if movement_dir != Move::DOWN {score} else {MIN_VAL})
+        .map(|(_, _, score)| if is_safe_move(Move::UP,  you, _board)  {score} else {MIN_VAL})
         .sum();
     let down_score : i32 = priorities
         .clone()
         .filter(|(_, y, _)| y < &my_head.y)
-        .map(|(_, _, score)| if movement_dir != Move::UP {score} else {MIN_VAL})
+        .map(|(_, _, score)| if is_safe_move(Move::DOWN,  you, _board)  {score} else {MIN_VAL})
         .sum();
+
+    info!("left_score {} right_score {} up_score {} down_score {}", left_score, right_score, up_score, down_score);
 
     let scores = [(left_score, Move::LEFT), (right_score, Move::RIGHT), (up_score, Move::UP), (down_score, Move::DOWN)];
 
